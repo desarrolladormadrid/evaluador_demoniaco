@@ -21,7 +21,7 @@
         .chart-container { position: relative; margin: auto; height: 50vh; width: 85vw; max-width: 450px; max-height: 450px; }
         @media (min-width: 768px) { .chart-container { height: 380px; width: 380px; } }
         
-        .summary-chart-container { position: relative; margin: auto; height: 220px; width: 100%; } /* Ajustado para score */
+        .summary-chart-container { position: relative; margin: auto; height: 220px; width: 100%; } 
 
         #reportOutput[contenteditable="true"] { border: 1px solid #4a5568; outline: none; }
         #reportOutput[contenteditable="true"]:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.5); }
@@ -36,7 +36,7 @@
 
     <header class="w-full max-w-5xl mb-6 text-center">
         <h1 class="text-3xl md:text-4xl font-bold text-indigo-400">Informe de Habilidad</h1>
-        <p id="userIdDisplay" class="text-xs text-gray-500 mt-1"></p>
+        <!-- userIdDisplay removed as Firebase Auth is no longer used -->
     </header>
 
     <!-- Gestión de Trabajadores -->
@@ -137,19 +137,11 @@
         </div>
     </div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
+    <script> // Changed script type="module" to regular script for simplicity with localStorage
         const { jsPDF } = window.jspdf;
 
-        // --- Firebase Config ---
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-skill-app'; 
-
-        let app, auth, db, userId, baseWorkerColPath; 
-        let isAuthReady = false;
+        // --- LocalStorage Key ---
+        const LOCAL_STORAGE_KEY = 'skillAppAllWorkersData';
 
         // --- Initial Data ---
         const initialWorkerNamesSeed = ["Lautaro", "Franco", "Juan Cruz", "Abril", "Luca", "Franchesco", "Cristian", "Juan Viggiano", "Paul"];
@@ -165,7 +157,7 @@
         ];
         let currentSkills = JSON.parse(JSON.stringify(defaultSkillsTemplate)); 
         let activeWorkerId = null; 
-        let allWorkersDataCache = {}; 
+        let allWorkersDataCache = {}; // This will be populated from localStorage
         let summaryChartInstances = []; 
 
         // --- DOM Elements ---
@@ -193,7 +185,7 @@
         const resetWorkerBtn = document.getElementById('resetWorkerBtn');
         const deleteWorkerBtn = document.getElementById('deleteWorkerBtn');
         const resetAllBtn = document.getElementById('resetAllBtn');
-        const userIdDisplay = document.getElementById('userIdDisplay');
+        // const userIdDisplay = document.getElementById('userIdDisplay'); // Removed
 
         const confirmationModal = document.getElementById('confirmationModal');
         const modalTitle = document.getElementById('modalTitle');
@@ -242,102 +234,23 @@
             }
         });
         
-        // --- Firebase Initialization and Auth ---
-        async function initializeFirebase() {
-            if (!firebaseConfig) {
-                console.error("Firebase config is missing!");
-                showError("Error de configuración de Firebase.");
-                return;
-            }
-            try {
-                app = initializeApp(firebaseConfig);
-                auth = getAuth(app);
-                db = getFirestore(app);
-
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        if (!isAuthReady) { 
-                            const userAppCollectionName = 'skillReportsData'; 
-                            const userAppDocId = 'userSkillData';      
-                            const workersSubColName = 'workers';          
-                            baseWorkerColPath = `/artifacts/${appId}/users/${userId}/${userAppCollectionName}/${userAppDocId}/${workersSubColName}`;
-                            
-                            userIdDisplay.textContent = `ID de Sesión: ${userId.substring(0,8)}...`;
-                            isAuthReady = true;
-                            console.log("Firebase Auth Ready. User ID:", userId, "Base Worker Collection Path:", baseWorkerColPath);
-                            await loadInitialData();
-                        }
-                    } else {
-                        isAuthReady = false; 
-                        console.log("No user authenticated, attempting sign-in...");
-                        try {
-                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                                await signInWithCustomToken(auth, __initial_auth_token);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
-                        } catch (signInError) {
-                            console.error("Critical sign-in error:", signInError);
-                            userId = `error_user_${crypto.randomUUID()}`;
-                            const userAppCollectionName = 'skillReportsData';
-                            const userAppDocId = 'userSkillData';     
-                            const workersSubColName = 'workers';         
-                            baseWorkerColPath = `/artifacts/${appId}/users/${userId}/${userAppCollectionName}/${userAppDocId}/${workersSubColName}`;
-
-                            userIdDisplay.textContent = `Error de Autenticación. ID: ${userId.substring(0,8)}...`;
-                            isAuthReady = true; 
-                            showError("Fallo crítico de autenticación. La aplicación podría no funcionar correctamente.");
-                            await loadInitialData(); 
-                        }
-                    }
-                });
-            } catch (error) {
-                console.error("Error initializing Firebase:", error);
-                showError("No se pudo inicializar Firebase.");
-            }
-        }
-        
         // --- Tab Management ---
-        async function fetchAllWorkersAndRenderTabs() {
-            if (!isAuthReady || !baseWorkerColPath) return;
+        function fetchAllWorkersAndRenderTabs() {
             dynamicWorkerList = [];
-            let firestoreIsEmpty = true;
-            try {
-                const workersColRef = collection(db, baseWorkerColPath);
-                const querySnapshot = await getDocs(workersColRef);
-                if (!querySnapshot.empty) {
-                    firestoreIsEmpty = false;
-                    querySnapshot.forEach((doc) => {
-                        dynamicWorkerList.push({ id: doc.id, displayName: doc.data().name || doc.id, type: 'worker' });
-                    });
+            const storedData = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) || {};
+            
+            if (Object.keys(storedData).length > 0) {
+                for (const workerId in storedData) {
+                    dynamicWorkerList.push({ id: workerId, displayName: storedData[workerId].name || workerId, type: 'worker' });
                 }
-                
-                // If Firestore is empty, ensure dynamicWorkerList is populated with seed names for tab creation
-                // This ensures tabs for seed workers are always present if no other workers are saved.
-                if (firestoreIsEmpty) {
-                    initialWorkerNamesSeed.forEach(name => {
-                        const workerId = name.toLowerCase().replace(/\s+/g, '_');
-                        // Add if not already (e.g. if one was added manually but others are seed)
-                        if (!dynamicWorkerList.some(w => w.id === workerId)) { 
-                           dynamicWorkerList.push({ id: workerId, displayName: name, type: 'worker' });
-                        }
-                    });
-                }
-                dynamicWorkerList.sort((a, b) => a.displayName.localeCompare(b.displayName));
-
-            } catch (error) {
-                console.error("Error fetching worker list:", error);
-                showError("Error al cargar la lista de trabajadores.");
-                // Fallback to seed if error fetching and list is still empty
-                if (dynamicWorkerList.length === 0) {
-                     initialWorkerNamesSeed.forEach(name => {
-                        const workerId = name.toLowerCase().replace(/\s+/g, '_');
-                        dynamicWorkerList.push({ id: workerId, displayName: name, type: 'worker' });
-                    });
-                    dynamicWorkerList.sort((a, b) => a.displayName.localeCompare(b.displayName));
-                }
+            } else {
+                // If localStorage is empty, populate with seed names for tab display
+                initialWorkerNamesSeed.forEach(name => {
+                    const workerId = name.toLowerCase().replace(/\s+/g, '_');
+                    dynamicWorkerList.push({ id: workerId, displayName: name, type: 'worker' });
+                });
             }
+            dynamicWorkerList.sort((a, b) => a.displayName.localeCompare(b.displayName));
             renderTabs(dynamicWorkerList);
         }
 
@@ -347,7 +260,6 @@
             const summaryTab = { id: 'summary', displayName: 'Resumen General', type: 'summary' };
             const effectiveWorkersForTabs = Array.isArray(workersForTabs) ? workersForTabs : [];
             const allTabs = [summaryTab, ...effectiveWorkersForTabs];
-
 
             allTabs.forEach(tabInfo => {
                 const tabElement = document.createElement('button');
@@ -363,14 +275,9 @@
             });
         }
 
-        async function handleTabClick(tabId, displayName, type) {
-            if (!isAuthReady || !baseWorkerColPath) { 
-                showError("Firebase no está listo o la ruta de datos no está configurada. Intenta de nuevo en unos momentos.");
-                return;
-            }
+        async function handleTabClick(tabId, displayName, type) { // async removed as no await calls directly here now
             activeWorkerId = tabId;
             
-            // Update active class on tabs without full re-render from Firestore
             const allTabElements = tabsContainer.querySelectorAll('.tab');
             allTabElements.forEach(tab => {
                 if (tab.dataset.tabId === activeWorkerId) {
@@ -402,7 +309,7 @@
                 resetWorkerBtn.disabled = false;
                 deleteWorkerBtn.disabled = false; 
                 reportOutput.setAttribute('contenteditable', 'true');
-                await loadWorkerData(tabId, displayName);
+                loadWorkerData(tabId, displayName); // No longer async
             } else if (type === 'summary') {
                 mainChartSection.classList.add('hidden'); 
                 statsTitle.textContent = 'Estadísticas de Habilidades'; 
@@ -417,201 +324,169 @@
                 exportPdfBtn.disabled = false; 
                 resetWorkerBtn.disabled = true;
                 deleteWorkerBtn.disabled = true; 
-                await loadAndDisplaySummary();
+                loadAndDisplaySummary(); // No longer async
             }
         }
 
-        // --- Data Handling (Firestore) ---
-        async function loadWorkerData(workerId, displayName) {
-            if (!baseWorkerColPath) { console.error("baseWorkerColPath not set in loadWorkerData"); return; }
-            const workerDocRef = doc(db, baseWorkerColPath, workerId); 
-            try {
-                const docSnap = await getDoc(workerDocRef);
-                if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    currentSkills = data.skills.map(s => ({...s})); 
-                    allWorkersDataCache[workerId] = { name: displayName, skills: data.skills.map(s => ({...s}))};
-                     if(data.report) reportOutput.innerHTML = data.report;
-                     else reportOutput.innerHTML = `<p class="italic">No hay informe generado para ${displayName}.</p>`;
-                } else {
-                    currentSkills = JSON.parse(JSON.stringify(defaultSkillsTemplate));
-                    allWorkersDataCache[workerId] = { name: displayName, skills: JSON.parse(JSON.stringify(defaultSkillsTemplate)) };
-                    // Save the default data for this new worker when their tab is first accessed
-                    await saveWorkerData(workerId, displayName, currentSkills, `<p class="italic">Perfil para ${displayName} (usando plantilla). Los cambios se guardarán.</p>`);
-                    reportOutput.innerHTML = `<p class="italic">Perfil para ${displayName} (usando plantilla). Los cambios se guardarán.</p>`;
-                }
-            } catch (error) {
-                console.error(`Error cargando datos para ${workerId}:`, error);
-                showError(`Error al cargar datos de ${displayName}.`);
-                currentSkills = JSON.parse(JSON.stringify(defaultSkillsTemplate)); 
-                reportOutput.innerHTML = `<p class="text-red-400">Error al cargar datos.</p>`;
+        // --- Data Handling (LocalStorage) ---
+        function loadWorkerData(workerId, displayName) {
+            const allData = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) || {};
+            const workerData = allData[workerId];
+
+            if (workerData) {
+                currentSkills = workerData.skills.map(s => ({...s})); 
+                allWorkersDataCache[workerId] = { name: displayName, skills: workerData.skills.map(s => ({...s})), report: workerData.report };
+                reportOutput.innerHTML = workerData.report || `<p class="italic">No hay informe generado para ${displayName}.</p>`;
+            } else {
+                // Worker data doesn't exist in LocalStorage, use defaults.
+                // This will be saved to LocalStorage when user interacts or if saveWorkerData is called.
+                currentSkills = JSON.parse(JSON.stringify(defaultSkillsTemplate));
+                allWorkersDataCache[workerId] = { name: displayName, skills: JSON.parse(JSON.stringify(defaultSkillsTemplate)) };
+                reportOutput.innerHTML = `<p class="italic">Perfil para ${displayName} (usando plantilla). Los cambios se guardarán.</p>`;
+                // Optionally, save this default worker data to localStorage immediately when their tab is first clicked
+                // saveWorkerData(workerId, displayName, currentSkills, reportOutput.innerHTML); 
             }
             renderSkillSliders();
             updateMainChart();
         }
 
-        async function saveWorkerData(workerId, displayName, skillsToSave, reportText = null) {
-            if (!isAuthReady || !workerId || workerId === 'summary' || !baseWorkerColPath) return;
-            const workerDocRef = doc(db, baseWorkerColPath, workerId); 
+        function saveWorkerData(workerId, displayName, skillsToSave, reportText = null) {
+            if (!workerId || workerId === 'summary') return;
+            
+            const allData = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) || {};
+            
             const dataToSet = {
                 name: displayName, 
                 skills: skillsToSave.map(s => ({...s})) 
             };
+
             if (reportText !== null) {
                  dataToSet.report = reportText;
             } else {
-                const cachedWorker = allWorkersDataCache[workerId];
-                if (cachedWorker && cachedWorker.report) {
-                    dataToSet.report = cachedWorker.report;
+                // Preserve existing report if reportText is null
+                const existingWorkerData = allData[workerId] || allWorkersDataCache[workerId];
+                if (existingWorkerData && existingWorkerData.report) {
+                    dataToSet.report = existingWorkerData.report;
                 }
             }
+            allData[workerId] = dataToSet;
 
             try {
-                await setDoc(workerDocRef, dataToSet, { merge: true });
-                console.log(`Datos guardados para ${workerId}`);
-                if (!allWorkersDataCache[workerId]) allWorkersDataCache[workerId] = {};
-                allWorkersDataCache[workerId].name = displayName;
-                allWorkersDataCache[workerId].skills = skillsToSave.map(s => ({...s}));
-                 if (reportText !== null) {
-                    allWorkersDataCache[workerId].report = reportText;
-                } else if (dataToSet.report) { 
-                    allWorkersDataCache[workerId].report = dataToSet.report;
-                }
-
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allData));
+                console.log(`Datos guardados en localStorage para ${workerId}`);
+                // Update cache
+                allWorkersDataCache[workerId] = JSON.parse(JSON.stringify(dataToSet));
             } catch (error) {
-                console.error(`Error guardando datos para ${workerId}:`, error);
-                showError("Error al guardar los datos.");
+                console.error(`Error guardando datos en localStorage para ${workerId}:`, error);
+                showError("Error al guardar los datos en localStorage.");
             }
         }
         
-        async function loadAndDisplaySummary() {
-            if (!baseWorkerColPath) { console.error("baseWorkerColPath not set in loadAndDisplaySummary"); return; }
-            
+        function loadAndDisplaySummary() {
             reportOutput.innerHTML = ''; 
             const summaryGridContainer = document.createElement('div');
             summaryGridContainer.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6'; 
 
-            let workersToDisplayMap = new Map(); // Use a map to handle merging and avoid duplicates
+            let workersToDisplayMap = new Map();
+            const storedData = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) || {};
 
-            // 1. Add all seed workers with default data
+            // 1. Populate with seed workers first (they will be overwritten if data exists in localStorage)
             initialWorkerNamesSeed.forEach(name => {
                 const workerId = name.toLowerCase().replace(/\s+/g, '_');
                 workersToDisplayMap.set(workerId, {
                     id: workerId,
                     name: name,
                     skills: JSON.parse(JSON.stringify(defaultSkillsTemplate)),
-                    isSeed: true // Mark as seed data initially
+                    isSeed: true 
                 });
             });
-            
-            let firestoreHadData = false;
-            try {
-                const workersColRef = collection(db, baseWorkerColPath); 
-                const querySnapshot = await getDocs(workersColRef);
-                if (!querySnapshot.empty) {
-                    firestoreHadData = true;
-                    querySnapshot.forEach((docSnap) => {
-                        const workerData = docSnap.data();
-                        const workerId = docSnap.id;
-                        // Update cache and workersToDisplayMap with actual Firestore data
-                        allWorkersDataCache[workerId] = { name: workerData.name, skills: workerData.skills.map(s => ({...s})), report: workerData.report }; 
-                        workersToDisplayMap.set(workerId, {id: workerId, ...workerData, isSeed: false });
-                    });
-                }
-                
-                if (!firestoreHadData && initialWorkerNamesSeed.length > 0) {
-                     reportOutput.innerHTML = '<p class="italic text-center mb-4">No hay datos guardados en la nube. Mostrando plantilla de trabajadores iniciales. Para guardar datos, interactúa con la pestaña de cada trabajador.</p>';
-                } else if (!firestoreHadData && initialWorkerNamesSeed.length === 0) {
-                     reportOutput.innerHTML = "<p>No hay datos de trabajadores para mostrar un resumen. Añade trabajadores para empezar.</p>";
-                     return;
-                }
 
-
-                const workersToDisplay = Array.from(workersToDisplayMap.values());
-                workersToDisplay.sort((a,b) => a.name.localeCompare(b.name));
-
-
-                if (workersToDisplay.length === 0 ) { 
-                     reportOutput.innerHTML = "<p>No hay datos de trabajadores para mostrar un resumen. Añade trabajadores para empezar.</p>";
-                     return;
-                }
-
-                workersToDisplay.forEach((workerData) => {
-                    const workerId = workerData.id;
-                    const workerChartContainer = document.createElement('div');
-                    workerChartContainer.className = 'bg-gray-800 p-3 rounded-lg shadow-lg flex flex-col'; // Added flex-col
-
-                    const workerNameTitle = document.createElement('h3');
-                    workerNameTitle.className = 'text-lg font-semibold text-indigo-300 mb-1 text-center'; // Reduced mb
-                    workerNameTitle.textContent = workerData.name || workerId;
-                    workerChartContainer.appendChild(workerNameTitle);
-
-                    // Calculate and display average score for this worker in summary
-                    const sum = workerData.skills.reduce((acc, skill) => acc + skill.value, 0);
-                    const average = workerData.skills.length > 0 ? (sum / workerData.skills.length).toFixed(1) : "N/A";
-                    const averageScoreElement = document.createElement('p');
-                    averageScoreElement.className = 'text-sm text-gray-400 text-center mb-2';
-                    averageScoreElement.textContent = `Promedio: ${average}`;
-                    workerChartContainer.appendChild(averageScoreElement);
-
-
-                    const canvasContainer = document.createElement('div');
-                    canvasContainer.className = 'summary-chart-container flex-grow'; // Added flex-grow
-                    const canvas = document.createElement('canvas');
-                    canvas.id = `summary-chart-${workerId}`;
-                    canvasContainer.appendChild(canvas);
-                    workerChartContainer.appendChild(canvasContainer);
-                    
-                    summaryGridContainer.appendChild(workerChartContainer);
-
-                    const miniChartCtx = canvas.getContext('2d');
-                    const miniChart = new Chart(miniChartCtx, {
-                        type: 'radar',
-                        data: {
-                            labels: workerData.skills.map(s => s.name),
-                            datasets: [{
-                                label: `Habilidades de ${workerData.name || workerId}`,
-                                data: workerData.skills.map(s => s.value),
-                                backgroundColor: 'rgba(75, 192, 192, 0.2)',
-                                borderColor: 'rgb(75, 192, 192)',
-                                borderWidth: 1.5,
-                                pointBackgroundColor: 'rgb(75, 192, 192)',
-                                pointRadius: 2,
-                            }]
-                        },
-                        options: {
-                            responsive: true, maintainAspectRatio: false,
-                            scales: { r: {
-                                angleLines: { color: 'rgba(255, 255, 255, 0.15)' },
-                                grid: { color: 'rgba(255, 255, 255, 0.15)' },
-                                pointLabels: { font: { size: 9 }, color: 'rgba(229, 231, 235, 0.8)' },
-                                ticks: { display: false, stepSize: 25 },
-                                suggestedMin: 0, suggestedMax: 100
-                            }},
-                            plugins: { legend: { display: false }, tooltip: {
-                                titleFont: {size: 10}, bodyFont: {size: 10}, padding: 6,
-                                callbacks: { label: function(context) {
-                                    let label = context.dataset.label || '';
-                                    if (label) { label = (label.split(':')[0] || '').replace('Habilidades de ',''); } 
-                                    if (context.parsed.r !== null) { label += `: ${context.parsed.r}`; }
-                                    return label;
-                                }}
-                            }}
-                        }
-                    });
-                    summaryChartInstances.push(miniChart); 
-                });
-                const existingMessage = reportOutput.querySelector('p.italic');
-                if (existingMessage) {
-                    summaryGridContainer.insertAdjacentElement('beforebegin', existingMessage);
-                }
-                reportOutput.appendChild(summaryGridContainer);
-
-
-            } catch (error) {
-                console.error("Error cargando resumen:", error);
-                reportOutput.innerHTML = "<p class='text-red-400'>Error al cargar el resumen.</p>";
+            // 2. Override with data from localStorage if it exists
+            let localStorageHadData = false;
+            for (const workerId in storedData) {
+                localStorageHadData = true;
+                allWorkersDataCache[workerId] = JSON.parse(JSON.stringify(storedData[workerId])); // Update cache
+                workersToDisplayMap.set(workerId, { id: workerId, ...storedData[workerId], isSeed: false });
             }
+            
+            if (!localStorageHadData && initialWorkerNamesSeed.length > 0) {
+                 reportOutput.innerHTML = '<p class="italic text-center mb-4">No hay datos guardados. Mostrando plantilla de trabajadores. Para guardar datos, interactúa con la pestaña de cada trabajador.</p>';
+            } else if (workersToDisplayMap.size === 0) { // No seed and no stored data
+                 reportOutput.innerHTML = "<p>No hay datos de trabajadores para mostrar un resumen. Añade trabajadores para empezar.</p>";
+                 return;
+            }
+
+            const workersToDisplay = Array.from(workersToDisplayMap.values());
+            workersToDisplay.sort((a,b) => a.name.localeCompare(b.name));
+
+            workersToDisplay.forEach((workerData) => {
+                const workerId = workerData.id;
+                const workerChartContainer = document.createElement('div');
+                workerChartContainer.className = 'bg-gray-800 p-3 rounded-lg shadow-lg flex flex-col'; 
+
+                const workerNameTitle = document.createElement('h3');
+                workerNameTitle.className = 'text-lg font-semibold text-indigo-300 mb-1 text-center'; 
+                workerNameTitle.textContent = workerData.name || workerId;
+                workerChartContainer.appendChild(workerNameTitle);
+
+                const sum = workerData.skills.reduce((acc, skill) => acc + skill.value, 0);
+                const average = workerData.skills.length > 0 ? (sum / workerData.skills.length).toFixed(1) : "N/A";
+                const averageScoreElement = document.createElement('p');
+                averageScoreElement.className = 'text-sm text-gray-400 text-center mb-2';
+                averageScoreElement.textContent = `Promedio: ${average}`;
+                workerChartContainer.appendChild(averageScoreElement);
+
+                const canvasContainer = document.createElement('div');
+                canvasContainer.className = 'summary-chart-container flex-grow'; 
+                const canvas = document.createElement('canvas');
+                canvas.id = `summary-chart-${workerId}`;
+                canvasContainer.appendChild(canvas);
+                workerChartContainer.appendChild(canvasContainer);
+                
+                summaryGridContainer.appendChild(workerChartContainer);
+
+                const miniChartCtx = canvas.getContext('2d');
+                const miniChart = new Chart(miniChartCtx, {
+                    type: 'radar',
+                    data: {
+                        labels: workerData.skills.map(s => s.name),
+                        datasets: [{
+                            label: `Habilidades de ${workerData.name || workerId}`,
+                            data: workerData.skills.map(s => s.value),
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            borderColor: 'rgb(75, 192, 192)',
+                            borderWidth: 1.5,
+                            pointBackgroundColor: 'rgb(75, 192, 192)',
+                            pointRadius: 2,
+                        }]
+                    },
+                    options: {
+                        responsive: true, maintainAspectRatio: false,
+                        scales: { r: {
+                            angleLines: { color: 'rgba(255, 255, 255, 0.15)' },
+                            grid: { color: 'rgba(255, 255, 255, 0.15)' },
+                            pointLabels: { font: { size: 9 }, color: 'rgba(229, 231, 235, 0.8)' },
+                            ticks: { display: false, stepSize: 25 },
+                            suggestedMin: 0, suggestedMax: 100
+                        }},
+                        plugins: { legend: { display: false }, tooltip: {
+                            titleFont: {size: 10}, bodyFont: {size: 10}, padding: 6,
+                            callbacks: { label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) { label = (label.split(':')[0] || '').replace('Habilidades de ',''); } 
+                                if (context.parsed.r !== null) { label += `: ${context.parsed.r}`; }
+                                return label;
+                            }}
+                        }}
+                    }
+                });
+                summaryChartInstances.push(miniChart); 
+            });
+            const existingMessage = reportOutput.querySelector('p.italic');
+            if (existingMessage) {
+                summaryGridContainer.insertAdjacentElement('beforebegin', existingMessage);
+            }
+            reportOutput.appendChild(summaryGridContainer);
         }
 
 
@@ -709,7 +584,7 @@
         }
 
         // --- Worker Management ---
-        addWorkerBtn.addEventListener('click', async () => {
+        addWorkerBtn.addEventListener('click', () => { // Removed async
             const newName = newWorkerNameInput.value.trim();
             if (!newName) {
                 showError("El nombre del trabajador no puede estar vacío.");
@@ -717,17 +592,17 @@
             }
             const newWorkerId = newName.toLowerCase().replace(/\s+/g, '_');
             
-            const workerExists = dynamicWorkerList.some(worker => worker.id === newWorkerId);
-            if (workerExists) {
-                showError(`El trabajador con ID '${newWorkerId}' (derivado de '${newName}') ya existe.`);
+            const allData = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) || {};
+            if (allData[newWorkerId]) {
+                 showError(`El trabajador con ID '${newWorkerId}' (derivado de '${newName}') ya existe.`);
                 return;
             }
 
             const newWorkerSkills = JSON.parse(JSON.stringify(defaultSkillsTemplate));
-            await saveWorkerData(newWorkerId, newName, newWorkerSkills, `<p class="italic">Nuevo perfil creado para ${newName}.</p>`);
+            saveWorkerData(newWorkerId, newName, newWorkerSkills, `<p class="italic">Nuevo perfil creado para ${newName}.</p>`);
             newWorkerNameInput.value = ''; 
-            await fetchAllWorkersAndRenderTabs(); 
-            await handleTabClick(newWorkerId, newName, 'worker'); 
+            fetchAllWorkersAndRenderTabs(); // Refresh tab list
+            handleTabClick(newWorkerId, newName, 'worker'); // Switch to new worker's tab
             showError(`${newName} añadido correctamente.`, 'success');
         });
 
@@ -740,19 +615,22 @@
             showConfirmationModal(
                 "Eliminar Trabajador",
                 `¿Estás seguro de que quieres eliminar a ${workerNameToDelete}? Esta acción eliminará todos sus datos y no se puede deshacer.`,
-                async () => {
+                () => { // Removed async
                     loadingIndicator.classList.remove('hidden');
                     loadingText.textContent = `Eliminando a ${workerNameToDelete}...`;
                     try {
-                        const workerDocRef = doc(db, baseWorkerColPath, activeWorkerId);
-                        await deleteDoc(workerDocRef);
+                        const allData = JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEY)) || {};
+                        delete allData[activeWorkerId];
+                        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(allData));
+                        
                         delete allWorkersDataCache[activeWorkerId]; 
-                        console.log(`Trabajador ${activeWorkerId} eliminado.`);
-                        await fetchAllWorkersAndRenderTabs(); // This will update dynamicWorkerList and re-render tabs
-                        await handleTabClick('summary', 'Resumen General', 'summary'); // Go to summary
+                        console.log(`Trabajador ${activeWorkerId} eliminado de localStorage.`);
+                        
+                        fetchAllWorkersAndRenderTabs(); 
+                        handleTabClick('summary', 'Resumen General', 'summary'); 
                         showError(`${workerNameToDelete} ha sido eliminado.`, 'success');
                     } catch (error) {
-                        console.error("Error eliminando trabajador:", error);
+                        console.error("Error eliminando trabajador de localStorage:", error);
                         showError(`Error al eliminar a ${workerNameToDelete}.`);
                     } finally {
                         loadingIndicator.classList.add('hidden');
@@ -826,7 +704,7 @@ Considera que "Test" (o su nombre editado) es sobre pruebas manuales/funcionales
                     const text = result.candidates[0].content.parts[0].text;
                     let htmlReport = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/^- (.*$)/gm, '<li>$1</li>').replace(/(<li>.*?<\/li>(<br>)*)+/g, (match) => `<ul>${match.replace(/<br>/g,'')}</ul>`).replace(/<\/ul>(<br>)*<ul>/g, '').replace(/\n/g, '<br>');
                     reportOutput.innerHTML = htmlReport;
-                    await saveWorkerData(activeWorkerId, workerName, currentSkills, htmlReport);
+                    saveWorkerData(activeWorkerId, workerName, currentSkills, htmlReport); // Save to localStorage
                 } else { throw new Error("Respuesta API inesperada."); }
             } catch (error) {  
                 console.error('Error generando informe:', error);
@@ -949,10 +827,10 @@ Considera que "Test" (o su nombre editado) es sobre pruebas manuales/funcionales
             showConfirmationModal(
                 "Resetear Trabajador",
                 `¿Estás seguro de que quieres resetear las habilidades de ${workerNameDisplay.value} a los valores por defecto? Esta acción no se puede deshacer.`,
-                async () => {
+                () => { // Removed async
                     const workerDisplayName = workerNameDisplay.value;
                     currentSkills = JSON.parse(JSON.stringify(defaultSkillsTemplate));
-                    await saveWorkerData(activeWorkerId, workerDisplayName, currentSkills, `<p class="italic">Habilidades reseteadas para ${workerDisplayName}.</p>`); 
+                    saveWorkerData(activeWorkerId, workerDisplayName, currentSkills, `<p class="italic">Habilidades reseteadas para ${workerDisplayName}.</p>`); 
                     reportOutput.innerHTML = `<p class="italic">Habilidades reseteadas para ${workerDisplayName}.</p>`;
                     renderSkillSliders();
                     updateMainChart();
@@ -965,25 +843,18 @@ Considera que "Test" (o su nombre editado) es sobre pruebas manuales/funcionales
             showConfirmationModal(
                 "Resetear Todos los Datos",
                 "¿Estás seguro de que quieres resetear los datos de TODOS los trabajadores? Esta acción eliminará todos los datos guardados y no se puede deshacer.",
-                async () => {
-                    if (!baseWorkerColPath) { console.error("baseWorkerColPath not set in resetAllBtn"); return; }
+                () => { // Removed async
                     loadingIndicator.classList.remove('hidden');
                     loadingText.textContent = "Reseteando todo...";
                     try {
-                        const workersColRef = collection(db, baseWorkerColPath); 
-                        const querySnapshot = await getDocs(workersColRef);
-                        const batch = writeBatch(db);
-                        querySnapshot.forEach((docSnap) => {
-                            batch.delete(docSnap.ref);
-                        });
-                        await batch.commit();
+                        localStorage.removeItem(LOCAL_STORAGE_KEY);
                         allWorkersDataCache = {}; 
                         dynamicWorkerList = []; 
-                        console.log("Todos los datos de trabajadores han sido reseteados.");
-                        await fetchAllWorkersAndRenderTabs(); 
-                        await handleTabClick('summary', 'Resumen General', 'summary'); 
+                        console.log("Todos los datos de trabajadores han sido reseteados de localStorage.");
+                        fetchAllWorkersAndRenderTabs(); 
+                        handleTabClick('summary', 'Resumen General', 'summary'); 
                     } catch (error) {
-                        console.error("Error reseteando todos los datos:", error);
+                        console.error("Error reseteando todos los datos de localStorage:", error);
                         showError("Error al resetear todos los datos.");
                     } finally {
                         loadingIndicator.classList.add('hidden');
@@ -1023,14 +894,14 @@ Considera que "Test" (o su nombre editado) es sobre pruebas manuales/funcionales
         }
 
         // --- Initial Load ---
-        async function loadInitialData() {
-            await fetchAllWorkersAndRenderTabs(); 
-            // Set 'summary' as the default active tab ID before calling handleTabClick
-            activeWorkerId = 'summary';
-            await handleTabClick('summary', 'Resumen General', 'summary'); 
+        function loadInitialData() { // Removed async
+            fetchAllWorkersAndRenderTabs(); 
+            activeWorkerId = 'summary'; // Set default active tab
+            handleTabClick('summary', 'Resumen General', 'summary'); 
         }
         
-        initializeFirebase(); 
+        // Initialize the app once the DOM is fully loaded
+        document.addEventListener('DOMContentLoaded', loadInitialData);
 
     </script>
 </body>
