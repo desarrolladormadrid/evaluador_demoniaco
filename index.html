@@ -1,0 +1,1037 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Informe de Habilidad</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #2d3748; }
+        ::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #718096; }
+        input[type="range"]::-webkit-slider-runnable-track { background: #4a5568; height: 0.5rem; border-radius: 0.25rem; }
+        input[type="range"]::-moz-range-track { background: #4a5568; height: 0.5rem; border-radius: 0.25rem; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 1.25rem; height: 1.25rem; background: #6366f1; cursor: pointer; border-radius: 50%; margin-top: -0.375rem; }
+        input[type="range"]::-moz-range-thumb { width: 1.25rem; height: 1.25rem; background: #6366f1; cursor: pointer; border-radius: 50%; border: none; }
+        .chart-container { position: relative; margin: auto; height: 50vh; width: 85vw; max-width: 450px; max-height: 450px; }
+        @media (min-width: 768px) { .chart-container { height: 380px; width: 380px; } }
+        
+        .summary-chart-container { position: relative; margin: auto; height: 220px; width: 100%; } /* Ajustado para score */
+
+        #reportOutput[contenteditable="true"] { border: 1px solid #4a5568; outline: none; }
+        #reportOutput[contenteditable="true"]:focus { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.5); }
+        .editable-skill-name { background-color: #374151; border: 1px solid #4b5563; padding: 2px 6px; border-radius: 4px; color: #e5e7eb; }
+        .editable-skill-name:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 1px #6366f1; }
+        .tab { padding: 0.5rem 1rem; cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.3s ease; }
+        .tab.active { border-bottom-color: #6366f1; color: #818cf8; font-weight: 600; }
+        .tab:hover { background-color: #374151; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen flex flex-col items-center p-2 md:p-4 selection:bg-indigo-500 selection:text-white">
+
+    <header class="w-full max-w-5xl mb-6 text-center">
+        <h1 class="text-3xl md:text-4xl font-bold text-indigo-400">Informe de Habilidad</h1>
+        <p id="userIdDisplay" class="text-xs text-gray-500 mt-1"></p>
+    </header>
+
+    <!-- Gestión de Trabajadores -->
+    <section class="w-full max-w-5xl mb-6 bg-gray-800 p-4 rounded-xl shadow-lg">
+        <h2 class="text-xl font-semibold text-center text-indigo-300 mb-3">Gestión de Trabajadores</h2>
+        <div class="flex flex-col sm:flex-row items-center gap-3">
+            <input type="text" id="newWorkerNameInput" class="bg-gray-700 border border-gray-600 text-white placeholder-gray-400 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 p-2.5 flex-grow" placeholder="Nombre del nuevo trabajador">
+            <button id="addWorkerBtn" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-5 rounded-lg shadow-md flex items-center justify-center text-sm w-full sm:w-auto">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Añadir Trabajador
+            </button>
+        </div>
+    </section>
+
+    <!-- Pestañas -->
+    <div id="tabsContainer" class="w-full max-w-5xl mb-6 flex flex-wrap justify-center border-b border-gray-700">
+        <!-- Las pestañas se generarán aquí -->
+    </div>
+
+    <main class="w-full max-w-5xl flex flex-col lg:flex-row gap-6">
+        <section id="mainChartSection" class="w-full lg:w-1/2 bg-gray-800 p-4 md:p-6 rounded-xl shadow-2xl">
+            <h2 id="statsTitle" class="text-2xl font-semibold mb-6 text-center text-indigo-300">Estadísticas de Habilidades</h2>
+            <div class="chart-container mb-6" id="chartSectionToExport"> 
+                <canvas id="hexagonChart"></canvas>
+            </div>
+        </section>
+
+        <section id="controlsSection" class="w-full lg:w-1/2 bg-gray-800 p-4 md:p-6 rounded-xl shadow-2xl">
+             <h2 class="text-2xl font-semibold mb-6 text-center text-indigo-300">Ajustar Habilidades</h2>
+            <div class="mb-4">
+                <label for="workerNameDisplay" class="block text-sm font-medium text-gray-300 mb-1">Trabajador Activo:</label>
+                <input type="text" id="workerNameDisplay" name="workerNameDisplay" class="w-full bg-gray-700 border border-gray-600 text-white placeholder-gray-400 text-sm rounded-lg p-2.5" readonly>
+            </div>
+            <p id="skillEditInstruction" class="text-sm text-gray-400 mb-3 text-center">Puedes hacer clic en los nombres de las habilidades para editarlos.</p>
+            <div id="slidersContainer" class="space-y-4">
+                <!-- Sliders -->
+            </div>
+        </section>
+    </main>
+
+    <section id="reportSection" class="w-full max-w-5xl mt-6 bg-gray-800 p-4 md:p-6 rounded-xl shadow-2xl">
+        <h2 id="reportAreaTitle" class="text-2xl font-semibold mb-4 text-center text-indigo-300">Informe y Recomendaciones</h2>
+        <p id="reportEditInstruction" class="text-sm text-gray-400 mb-1 text-center">Puedes editar el informe directamente en el recuadro antes de exportar.</p>
+        
+        <div id="actionButtonsContainer" class="flex flex-col sm:flex-row justify-center items-center gap-3 mb-4">
+            <button id="generateReportBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md flex items-center justify-center w-full sm:w-auto text-sm">
+                <svg id="button-icon-svg" class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"></svg>
+                <span id="button-text">Generar Informe</span>
+            </button>
+            <button id="exportPdfBtn" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md flex items-center justify-center w-full sm:w-auto text-sm">
+                <svg class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+                Exportar a PDF
+            </button>
+            <div id="loadingIndicator" class="hidden items-center">
+                <svg class="animate-spin h-5 w-5 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <span id="loadingText" class="ml-2 text-indigo-300 text-sm"></span>
+            </div>
+        </div>
+        <div id="reportOutput" contenteditable="false" class="bg-gray-700 p-4 rounded-lg min-h-[200px] text-gray-300 whitespace-pre-wrap overflow-auto focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+            <p class="italic">Selecciona un trabajador y genera un informe, o ve a la pestaña de Resumen.</p>
+        </div>
+        <div id="errorMessage" class="mt-3 p-2 bg-red-700 text-red-100 rounded-lg hidden text-sm"></div>
+    </section>
+    
+    <section class="w-full max-w-5xl mt-6 bg-gray-800 p-4 md:p-6 rounded-xl shadow-2xl">
+        <h2 class="text-xl font-semibold mb-4 text-center text-red-400">Opciones Avanzadas</h2>
+        <div class="flex flex-col sm:flex-row justify-center items-center gap-3">
+            <button id="resetWorkerBtn" class="bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md flex items-center justify-center w-full sm:w-auto text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+                Resetear Trabajador Actual
+            </button>
+            <button id="deleteWorkerBtn" class="bg-pink-600 hover:bg-pink-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md flex items-center justify-center w-full sm:w-auto text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12.56 0c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+                Eliminar Trabajador Actual
+            </button>
+            <button id="resetAllBtn" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg shadow-md flex items-center justify-center w-full sm:w-auto text-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4 mr-2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" /></svg>
+                Resetear Todos los Datos
+            </button>
+        </div>
+    </section>
+
+    <footer class="w-full max-w-5xl mt-10 mb-4 text-center">
+        <p class="text-sm text-gray-500">&copy; 2024 Informe de Habilidad. Todos los derechos reservados.</p>
+    </footer>
+
+    <!-- Modal de Confirmación -->
+    <div id="confirmationModal" class="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full">
+            <h3 id="modalTitle" class="text-lg font-semibold text-white mb-4">Confirmar Acción</h3>
+            <p id="modalMessage" class="text-gray-300 mb-6">¿Estás seguro?</p>
+            <div class="flex justify-end gap-3">
+                <button id="modalCancelBtn" class="bg-gray-600 hover:bg-gray-500 text-white py-2 px-4 rounded-lg text-sm">Cancelar</button>
+                <button id="modalConfirmBtn" class="bg-red-600 hover:bg-red-500 text-white py-2 px-4 rounded-lg text-sm">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const { jsPDF } = window.jspdf;
+
+        // --- Firebase Config ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-skill-app'; 
+
+        let app, auth, db, userId, baseWorkerColPath; 
+        let isAuthReady = false;
+
+        // --- Initial Data ---
+        const initialWorkerNamesSeed = ["Lautaro", "Franco", "Juan Cruz", "Abril", "Luca", "Franchesco", "Cristian", "Juan Viggiano", "Paul"];
+        let dynamicWorkerList = []; 
+
+        const defaultSkillsTemplate = [
+            { id: 'velocidad', name: 'Velocidad', value: 50, originalName: 'Velocidad' },
+            { id: 'experiencia', name: 'Experiencia', value: 50, originalName: 'Experiencia' },
+            { id: 'respuesta', name: 'Respuesta', value: 50, originalName: 'Respuesta' },
+            { id: 'test', name: 'Test', value: 50, originalName: 'Test', description: "Habilidad para realizar pruebas manuales y funcionales, asegurando que la funcionalidad desarrollada se alinea con la descripción de la tarea y los requisitos, más que la creación de tests automatizados con frameworks." },
+            { id: 'comunicacion', name: 'Comunicación', value: 50, originalName: 'Comunicación' },
+            { id: 'proactividad', name: 'Proactividad', value: 50, originalName: 'Proactividad' }
+        ];
+        let currentSkills = JSON.parse(JSON.stringify(defaultSkillsTemplate)); 
+        let activeWorkerId = null; 
+        let allWorkersDataCache = {}; 
+        let summaryChartInstances = []; 
+
+        // --- DOM Elements ---
+        const tabsContainer = document.getElementById('tabsContainer');
+        const newWorkerNameInput = document.getElementById('newWorkerNameInput');
+        const addWorkerBtn = document.getElementById('addWorkerBtn');
+        const slidersContainer = document.getElementById('slidersContainer');
+        const reportOutput = document.getElementById('reportOutput');
+        const generateReportBtn = document.getElementById('generateReportBtn');
+        const exportPdfBtn = document.getElementById('exportPdfBtn');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const loadingText = document.getElementById('loadingText');
+        const errorMessage = document.getElementById('errorMessage');
+        const buttonIconSvg = document.getElementById('button-icon-svg');
+        const buttonText = document.getElementById('button-text');
+        const workerNameDisplay = document.getElementById('workerNameDisplay');
+        const mainChartSection = document.getElementById('mainChartSection'); 
+        const statsTitle = document.getElementById('statsTitle'); 
+        const controlsSection = document.getElementById('controlsSection');
+        const reportSection = document.getElementById('reportSection'); 
+        const reportAreaTitle = document.getElementById('reportAreaTitle'); 
+        const skillEditInstruction = document.getElementById('skillEditInstruction');
+        const reportEditInstruction = document.getElementById('reportEditInstruction');
+        const actionButtonsContainer = document.getElementById('actionButtonsContainer');
+        const resetWorkerBtn = document.getElementById('resetWorkerBtn');
+        const deleteWorkerBtn = document.getElementById('deleteWorkerBtn');
+        const resetAllBtn = document.getElementById('resetAllBtn');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+
+        const confirmationModal = document.getElementById('confirmationModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+        const modalCancelBtn = document.getElementById('modalCancelBtn');
+        let confirmAction = null;
+
+
+        const originalButtonIconPath = `<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />`;
+        const loadingButtonIconPath = `<path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />`;
+        buttonIconSvg.innerHTML = originalButtonIconPath;
+
+        // --- Chart.js Setup (Main Chart) ---
+        const mainHexagonChartCtx = document.getElementById('hexagonChart').getContext('2d');
+        const mainHexagonChart = new Chart(mainHexagonChartCtx, {
+            type: 'radar',
+            data: {
+                labels: currentSkills.map(skill => skill.name),
+                datasets: [{
+                    label: 'Nivel de Habilidad',
+                    data: currentSkills.map(skill => skill.value),
+                    backgroundColor: 'rgba(99, 102, 241, 0.3)',
+                    borderColor: 'rgba(129, 140, 248, 1)',
+                    borderWidth: 2,
+                    pointBackgroundColor: 'rgba(129, 140, 248, 1)',
+                }]
+            },
+            options: { 
+                responsive: true, maintainAspectRatio: false, animation: { onComplete: () => {} },
+                scales: { r: { 
+                    angleLines: { color: 'rgba(255, 255, 255, 0.2)' }, 
+                    grid: { color: 'rgba(255, 255, 255, 0.2)' }, 
+                    pointLabels: { color: 'rgba(229, 231, 235, 1)', font: { size: 12, weight: '500' } }, 
+                    ticks: { color: 'rgba(209, 213, 219, 1)', backdropColor: 'rgba(49, 46, 129, 0.6)', stepSize: 20, font: { size: 9 } }, 
+                    suggestedMin: 0, suggestedMax: 100 } },
+                plugins: { legend: { display: true, labels: { color: 'rgba(229, 231, 235, 1)' } },
+                    tooltip: { 
+                        backgroundColor: 'rgba(31, 41, 55, 0.9)', 
+                        titleColor: 'rgba(229, 231, 235, 1)', 
+                        bodyColor: 'rgba(209, 213, 219, 1)', 
+                        borderColor: 'rgba(99, 102, 241, 1)', 
+                        borderWidth: 1
+                     }
+                 }
+            }
+        });
+        
+        // --- Firebase Initialization and Auth ---
+        async function initializeFirebase() {
+            if (!firebaseConfig) {
+                console.error("Firebase config is missing!");
+                showError("Error de configuración de Firebase.");
+                return;
+            }
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        if (!isAuthReady) { 
+                            const userAppCollectionName = 'skillReportsData'; 
+                            const userAppDocId = 'userSkillData';      
+                            const workersSubColName = 'workers';          
+                            baseWorkerColPath = `/artifacts/${appId}/users/${userId}/${userAppCollectionName}/${userAppDocId}/${workersSubColName}`;
+                            
+                            userIdDisplay.textContent = `ID de Sesión: ${userId.substring(0,8)}...`;
+                            isAuthReady = true;
+                            console.log("Firebase Auth Ready. User ID:", userId, "Base Worker Collection Path:", baseWorkerColPath);
+                            await loadInitialData();
+                        }
+                    } else {
+                        isAuthReady = false; 
+                        console.log("No user authenticated, attempting sign-in...");
+                        try {
+                            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                                await signInWithCustomToken(auth, __initial_auth_token);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        } catch (signInError) {
+                            console.error("Critical sign-in error:", signInError);
+                            userId = `error_user_${crypto.randomUUID()}`;
+                            const userAppCollectionName = 'skillReportsData';
+                            const userAppDocId = 'userSkillData';     
+                            const workersSubColName = 'workers';         
+                            baseWorkerColPath = `/artifacts/${appId}/users/${userId}/${userAppCollectionName}/${userAppDocId}/${workersSubColName}`;
+
+                            userIdDisplay.textContent = `Error de Autenticación. ID: ${userId.substring(0,8)}...`;
+                            isAuthReady = true; 
+                            showError("Fallo crítico de autenticación. La aplicación podría no funcionar correctamente.");
+                            await loadInitialData(); 
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                showError("No se pudo inicializar Firebase.");
+            }
+        }
+        
+        // --- Tab Management ---
+        async function fetchAllWorkersAndRenderTabs() {
+            if (!isAuthReady || !baseWorkerColPath) return;
+            dynamicWorkerList = [];
+            let firestoreIsEmpty = true;
+            try {
+                const workersColRef = collection(db, baseWorkerColPath);
+                const querySnapshot = await getDocs(workersColRef);
+                if (!querySnapshot.empty) {
+                    firestoreIsEmpty = false;
+                    querySnapshot.forEach((doc) => {
+                        dynamicWorkerList.push({ id: doc.id, displayName: doc.data().name || doc.id, type: 'worker' });
+                    });
+                }
+                
+                // If Firestore is empty, ensure dynamicWorkerList is populated with seed names for tab creation
+                // This ensures tabs for seed workers are always present if no other workers are saved.
+                if (firestoreIsEmpty) {
+                    initialWorkerNamesSeed.forEach(name => {
+                        const workerId = name.toLowerCase().replace(/\s+/g, '_');
+                        // Add if not already (e.g. if one was added manually but others are seed)
+                        if (!dynamicWorkerList.some(w => w.id === workerId)) { 
+                           dynamicWorkerList.push({ id: workerId, displayName: name, type: 'worker' });
+                        }
+                    });
+                }
+                dynamicWorkerList.sort((a, b) => a.displayName.localeCompare(b.displayName));
+
+            } catch (error) {
+                console.error("Error fetching worker list:", error);
+                showError("Error al cargar la lista de trabajadores.");
+                // Fallback to seed if error fetching and list is still empty
+                if (dynamicWorkerList.length === 0) {
+                     initialWorkerNamesSeed.forEach(name => {
+                        const workerId = name.toLowerCase().replace(/\s+/g, '_');
+                        dynamicWorkerList.push({ id: workerId, displayName: name, type: 'worker' });
+                    });
+                    dynamicWorkerList.sort((a, b) => a.displayName.localeCompare(b.displayName));
+                }
+            }
+            renderTabs(dynamicWorkerList);
+        }
+
+
+        function renderTabs(workersForTabs) {
+            tabsContainer.innerHTML = '';
+            const summaryTab = { id: 'summary', displayName: 'Resumen General', type: 'summary' };
+            const effectiveWorkersForTabs = Array.isArray(workersForTabs) ? workersForTabs : [];
+            const allTabs = [summaryTab, ...effectiveWorkersForTabs];
+
+
+            allTabs.forEach(tabInfo => {
+                const tabElement = document.createElement('button');
+                tabElement.classList.add('tab', 'text-sm', 'md:text-base');
+                tabElement.textContent = tabInfo.displayName;
+                tabElement.dataset.tabId = tabInfo.id;
+                tabElement.dataset.tabType = tabInfo.type;
+                if (tabInfo.id === activeWorkerId) { 
+                    tabElement.classList.add('active');
+                }
+                tabElement.addEventListener('click', () => handleTabClick(tabInfo.id, tabInfo.displayName, tabInfo.type));
+                tabsContainer.appendChild(tabElement);
+            });
+        }
+
+        async function handleTabClick(tabId, displayName, type) {
+            if (!isAuthReady || !baseWorkerColPath) { 
+                showError("Firebase no está listo o la ruta de datos no está configurada. Intenta de nuevo en unos momentos.");
+                return;
+            }
+            activeWorkerId = tabId;
+            
+            // Update active class on tabs without full re-render from Firestore
+            const allTabElements = tabsContainer.querySelectorAll('.tab');
+            allTabElements.forEach(tab => {
+                if (tab.dataset.tabId === activeWorkerId) {
+                    tab.classList.add('active');
+                } else {
+                    tab.classList.remove('active');
+                }
+            });
+            
+            reportOutput.innerHTML = '<p class="italic">Cargando datos...</p>'; 
+            errorMessage.classList.add('hidden');
+            reportOutput.setAttribute('contenteditable', 'false'); 
+
+            summaryChartInstances.forEach(chart => chart.destroy());
+            summaryChartInstances = [];
+            deleteWorkerBtn.disabled = true; 
+
+            if (type === 'worker') {
+                mainChartSection.classList.remove('hidden');
+                workerNameDisplay.value = displayName;
+                controlsSection.classList.remove('hidden');
+                reportSection.classList.remove('hidden');
+                reportAreaTitle.textContent = "Informe y Recomendaciones";
+                skillEditInstruction.classList.remove('hidden');
+                reportEditInstruction.classList.remove('hidden');
+                actionButtonsContainer.classList.remove('hidden');
+                generateReportBtn.disabled = false;
+                exportPdfBtn.disabled = false;
+                resetWorkerBtn.disabled = false;
+                deleteWorkerBtn.disabled = false; 
+                reportOutput.setAttribute('contenteditable', 'true');
+                await loadWorkerData(tabId, displayName);
+            } else if (type === 'summary') {
+                mainChartSection.classList.add('hidden'); 
+                statsTitle.textContent = 'Estadísticas de Habilidades'; 
+                reportAreaTitle.textContent = "Resumen Detallado de Trabajadores"; 
+                workerNameDisplay.value = "Todos los Trabajadores";
+                controlsSection.classList.add('hidden'); 
+                reportSection.classList.remove('hidden'); 
+                skillEditInstruction.classList.add('hidden');
+                reportEditInstruction.classList.add('hidden'); 
+                actionButtonsContainer.classList.remove('hidden'); 
+                generateReportBtn.disabled = true; 
+                exportPdfBtn.disabled = false; 
+                resetWorkerBtn.disabled = true;
+                deleteWorkerBtn.disabled = true; 
+                await loadAndDisplaySummary();
+            }
+        }
+
+        // --- Data Handling (Firestore) ---
+        async function loadWorkerData(workerId, displayName) {
+            if (!baseWorkerColPath) { console.error("baseWorkerColPath not set in loadWorkerData"); return; }
+            const workerDocRef = doc(db, baseWorkerColPath, workerId); 
+            try {
+                const docSnap = await getDoc(workerDocRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    currentSkills = data.skills.map(s => ({...s})); 
+                    allWorkersDataCache[workerId] = { name: displayName, skills: data.skills.map(s => ({...s}))};
+                     if(data.report) reportOutput.innerHTML = data.report;
+                     else reportOutput.innerHTML = `<p class="italic">No hay informe generado para ${displayName}.</p>`;
+                } else {
+                    currentSkills = JSON.parse(JSON.stringify(defaultSkillsTemplate));
+                    allWorkersDataCache[workerId] = { name: displayName, skills: JSON.parse(JSON.stringify(defaultSkillsTemplate)) };
+                    // Save the default data for this new worker when their tab is first accessed
+                    await saveWorkerData(workerId, displayName, currentSkills, `<p class="italic">Perfil para ${displayName} (usando plantilla). Los cambios se guardarán.</p>`);
+                    reportOutput.innerHTML = `<p class="italic">Perfil para ${displayName} (usando plantilla). Los cambios se guardarán.</p>`;
+                }
+            } catch (error) {
+                console.error(`Error cargando datos para ${workerId}:`, error);
+                showError(`Error al cargar datos de ${displayName}.`);
+                currentSkills = JSON.parse(JSON.stringify(defaultSkillsTemplate)); 
+                reportOutput.innerHTML = `<p class="text-red-400">Error al cargar datos.</p>`;
+            }
+            renderSkillSliders();
+            updateMainChart();
+        }
+
+        async function saveWorkerData(workerId, displayName, skillsToSave, reportText = null) {
+            if (!isAuthReady || !workerId || workerId === 'summary' || !baseWorkerColPath) return;
+            const workerDocRef = doc(db, baseWorkerColPath, workerId); 
+            const dataToSet = {
+                name: displayName, 
+                skills: skillsToSave.map(s => ({...s})) 
+            };
+            if (reportText !== null) {
+                 dataToSet.report = reportText;
+            } else {
+                const cachedWorker = allWorkersDataCache[workerId];
+                if (cachedWorker && cachedWorker.report) {
+                    dataToSet.report = cachedWorker.report;
+                }
+            }
+
+            try {
+                await setDoc(workerDocRef, dataToSet, { merge: true });
+                console.log(`Datos guardados para ${workerId}`);
+                if (!allWorkersDataCache[workerId]) allWorkersDataCache[workerId] = {};
+                allWorkersDataCache[workerId].name = displayName;
+                allWorkersDataCache[workerId].skills = skillsToSave.map(s => ({...s}));
+                 if (reportText !== null) {
+                    allWorkersDataCache[workerId].report = reportText;
+                } else if (dataToSet.report) { 
+                    allWorkersDataCache[workerId].report = dataToSet.report;
+                }
+
+            } catch (error) {
+                console.error(`Error guardando datos para ${workerId}:`, error);
+                showError("Error al guardar los datos.");
+            }
+        }
+        
+        async function loadAndDisplaySummary() {
+            if (!baseWorkerColPath) { console.error("baseWorkerColPath not set in loadAndDisplaySummary"); return; }
+            
+            reportOutput.innerHTML = ''; 
+            const summaryGridContainer = document.createElement('div');
+            summaryGridContainer.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6'; 
+
+            let workersToDisplayMap = new Map(); // Use a map to handle merging and avoid duplicates
+
+            // 1. Add all seed workers with default data
+            initialWorkerNamesSeed.forEach(name => {
+                const workerId = name.toLowerCase().replace(/\s+/g, '_');
+                workersToDisplayMap.set(workerId, {
+                    id: workerId,
+                    name: name,
+                    skills: JSON.parse(JSON.stringify(defaultSkillsTemplate)),
+                    isSeed: true // Mark as seed data initially
+                });
+            });
+            
+            let firestoreHadData = false;
+            try {
+                const workersColRef = collection(db, baseWorkerColPath); 
+                const querySnapshot = await getDocs(workersColRef);
+                if (!querySnapshot.empty) {
+                    firestoreHadData = true;
+                    querySnapshot.forEach((docSnap) => {
+                        const workerData = docSnap.data();
+                        const workerId = docSnap.id;
+                        // Update cache and workersToDisplayMap with actual Firestore data
+                        allWorkersDataCache[workerId] = { name: workerData.name, skills: workerData.skills.map(s => ({...s})), report: workerData.report }; 
+                        workersToDisplayMap.set(workerId, {id: workerId, ...workerData, isSeed: false });
+                    });
+                }
+                
+                if (!firestoreHadData && initialWorkerNamesSeed.length > 0) {
+                     reportOutput.innerHTML = '<p class="italic text-center mb-4">No hay datos guardados en la nube. Mostrando plantilla de trabajadores iniciales. Para guardar datos, interactúa con la pestaña de cada trabajador.</p>';
+                } else if (!firestoreHadData && initialWorkerNamesSeed.length === 0) {
+                     reportOutput.innerHTML = "<p>No hay datos de trabajadores para mostrar un resumen. Añade trabajadores para empezar.</p>";
+                     return;
+                }
+
+
+                const workersToDisplay = Array.from(workersToDisplayMap.values());
+                workersToDisplay.sort((a,b) => a.name.localeCompare(b.name));
+
+
+                if (workersToDisplay.length === 0 ) { 
+                     reportOutput.innerHTML = "<p>No hay datos de trabajadores para mostrar un resumen. Añade trabajadores para empezar.</p>";
+                     return;
+                }
+
+                workersToDisplay.forEach((workerData) => {
+                    const workerId = workerData.id;
+                    const workerChartContainer = document.createElement('div');
+                    workerChartContainer.className = 'bg-gray-800 p-3 rounded-lg shadow-lg flex flex-col'; // Added flex-col
+
+                    const workerNameTitle = document.createElement('h3');
+                    workerNameTitle.className = 'text-lg font-semibold text-indigo-300 mb-1 text-center'; // Reduced mb
+                    workerNameTitle.textContent = workerData.name || workerId;
+                    workerChartContainer.appendChild(workerNameTitle);
+
+                    // Calculate and display average score for this worker in summary
+                    const sum = workerData.skills.reduce((acc, skill) => acc + skill.value, 0);
+                    const average = workerData.skills.length > 0 ? (sum / workerData.skills.length).toFixed(1) : "N/A";
+                    const averageScoreElement = document.createElement('p');
+                    averageScoreElement.className = 'text-sm text-gray-400 text-center mb-2';
+                    averageScoreElement.textContent = `Promedio: ${average}`;
+                    workerChartContainer.appendChild(averageScoreElement);
+
+
+                    const canvasContainer = document.createElement('div');
+                    canvasContainer.className = 'summary-chart-container flex-grow'; // Added flex-grow
+                    const canvas = document.createElement('canvas');
+                    canvas.id = `summary-chart-${workerId}`;
+                    canvasContainer.appendChild(canvas);
+                    workerChartContainer.appendChild(canvasContainer);
+                    
+                    summaryGridContainer.appendChild(workerChartContainer);
+
+                    const miniChartCtx = canvas.getContext('2d');
+                    const miniChart = new Chart(miniChartCtx, {
+                        type: 'radar',
+                        data: {
+                            labels: workerData.skills.map(s => s.name),
+                            datasets: [{
+                                label: `Habilidades de ${workerData.name || workerId}`,
+                                data: workerData.skills.map(s => s.value),
+                                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                                borderColor: 'rgb(75, 192, 192)',
+                                borderWidth: 1.5,
+                                pointBackgroundColor: 'rgb(75, 192, 192)',
+                                pointRadius: 2,
+                            }]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            scales: { r: {
+                                angleLines: { color: 'rgba(255, 255, 255, 0.15)' },
+                                grid: { color: 'rgba(255, 255, 255, 0.15)' },
+                                pointLabels: { font: { size: 9 }, color: 'rgba(229, 231, 235, 0.8)' },
+                                ticks: { display: false, stepSize: 25 },
+                                suggestedMin: 0, suggestedMax: 100
+                            }},
+                            plugins: { legend: { display: false }, tooltip: {
+                                titleFont: {size: 10}, bodyFont: {size: 10}, padding: 6,
+                                callbacks: { label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) { label = (label.split(':')[0] || '').replace('Habilidades de ',''); } 
+                                    if (context.parsed.r !== null) { label += `: ${context.parsed.r}`; }
+                                    return label;
+                                }}
+                            }}
+                        }
+                    });
+                    summaryChartInstances.push(miniChart); 
+                });
+                const existingMessage = reportOutput.querySelector('p.italic');
+                if (existingMessage) {
+                    summaryGridContainer.insertAdjacentElement('beforebegin', existingMessage);
+                }
+                reportOutput.appendChild(summaryGridContainer);
+
+
+            } catch (error) {
+                console.error("Error cargando resumen:", error);
+                reportOutput.innerHTML = "<p class='text-red-400'>Error al cargar el resumen.</p>";
+            }
+        }
+
+
+        // --- UI Updates (Sliders, Main Chart) ---
+        function renderSkillSliders() {
+            slidersContainer.innerHTML = '';
+            if (!currentSkills || currentSkills.length === 0) return;
+
+            currentSkills.forEach((skill, index) => {
+                const skillId = skill.id;
+                const sliderWrapper = document.createElement('div');
+                sliderWrapper.classList.add('mb-2');
+                const labelFlexContainer = document.createElement('div');
+                labelFlexContainer.classList.add('flex', 'justify-between', 'items-center', 'mb-1');
+
+                const nameInput = document.createElement('input');
+                nameInput.type = 'text';
+                nameInput.value = skill.name;
+                nameInput.classList.add('editable-skill-name', 'text-xs', 'md:text-sm', 'font-medium', 'text-gray-300', 'bg-gray-700', 'border', 'border-gray-600', 'rounded', 'px-2', 'py-1', 'focus:ring-indigo-500', 'focus:border-indigo-500', 'w-2/3');
+                nameInput.addEventListener('blur', (event) => updateSkillName(index, event.target.value));
+                nameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') e.target.blur(); });
+
+                const valueSpan = document.createElement('span');
+                valueSpan.id = `${skillId}-value`;
+                valueSpan.textContent = skill.value;
+                valueSpan.classList.add('text-indigo-400', 'font-semibold', 'text-xs', 'md:text-sm');
+                
+                labelFlexContainer.appendChild(nameInput);
+                labelFlexContainer.appendChild(valueSpan);
+
+                const slider = document.createElement('input');
+                slider.type = 'range';
+                slider.id = skillId + '-slider';
+                slider.min = 0;
+                slider.max = 100;
+                slider.value = skill.value;
+                slider.classList.add('w-full', 'h-2', 'bg-gray-700', 'rounded-lg', 'cursor-pointer');
+                slider.addEventListener('input', (event) => {
+                    const newValue = parseInt(event.target.value);
+                    currentSkills[index].value = newValue;
+                    updateMainChart();
+                    valueSpan.textContent = newValue;
+                    const workerDisplayName = dynamicWorkerList.find(w => w.id === activeWorkerId)?.displayName || activeWorkerId;
+                    saveWorkerData(activeWorkerId, workerDisplayName, currentSkills);
+                });
+                sliderWrapper.appendChild(labelFlexContainer);
+                sliderWrapper.appendChild(slider);
+                slidersContainer.appendChild(sliderWrapper);
+            });
+        }
+
+        function updateSkillName(index, newName) {
+            const trimmedName = newName.trim();
+            if (trimmedName && currentSkills[index].name !== trimmedName) {
+                currentSkills[index].name = trimmedName;
+                updateMainChart();
+                const workerDisplayName = dynamicWorkerList.find(w => w.id === activeWorkerId)?.displayName || activeWorkerId;
+                saveWorkerData(activeWorkerId, workerDisplayName, currentSkills);
+            } else if (!trimmedName) {
+                const nameInput = slidersContainer.querySelectorAll('.editable-skill-name')[index];
+                if(nameInput) nameInput.value = currentSkills[index].name; 
+            }
+        }
+        
+        function updateMainChart() {
+            if (activeWorkerId === 'summary' || !currentSkills || currentSkills.length === 0) {
+                 statsTitle.textContent = 'Estadísticas de Habilidades'; 
+                return;
+            }
+
+            mainHexagonChart.data.labels = currentSkills.map(s => s.name);
+            mainHexagonChart.data.datasets = [{
+                label: `Habilidades de ${workerNameDisplay.value || 'Trabajador'}`,
+                data: currentSkills.map(s => s.value),
+                backgroundColor: 'rgba(99, 102, 241, 0.3)',
+                borderColor: 'rgba(129, 140, 248, 1)',
+                borderWidth: 2,
+                pointBackgroundColor: 'rgba(129, 140, 248, 1)',
+            }];
+            mainHexagonChart.options.scales.r.pointLabels.font.size = currentSkills.reduce((acc, skill) => {
+                return Math.min(acc, calculateOptimalFontSize(skill.name));
+            }, 13); 
+            mainHexagonChart.options.plugins.legend.display = true;
+            mainHexagonChart.update();
+
+            const sum = currentSkills.reduce((acc, skill) => acc + skill.value, 0);
+            const average = currentSkills.length > 0 ? (sum / currentSkills.length).toFixed(1) : "N/A";
+            statsTitle.textContent = `Estadísticas de ${workerNameDisplay.value || 'Trabajador'} (Promedio: ${average})`;
+        }
+
+        function calculateOptimalFontSize(label) {
+            const maxLength = 10; const baseSize = 11; const minSize = 8; 
+            if (label.length > maxLength) return Math.max(minSize, baseSize - (label.length - maxLength));
+            return baseSize;
+        }
+
+        // --- Worker Management ---
+        addWorkerBtn.addEventListener('click', async () => {
+            const newName = newWorkerNameInput.value.trim();
+            if (!newName) {
+                showError("El nombre del trabajador no puede estar vacío.");
+                return;
+            }
+            const newWorkerId = newName.toLowerCase().replace(/\s+/g, '_');
+            
+            const workerExists = dynamicWorkerList.some(worker => worker.id === newWorkerId);
+            if (workerExists) {
+                showError(`El trabajador con ID '${newWorkerId}' (derivado de '${newName}') ya existe.`);
+                return;
+            }
+
+            const newWorkerSkills = JSON.parse(JSON.stringify(defaultSkillsTemplate));
+            await saveWorkerData(newWorkerId, newName, newWorkerSkills, `<p class="italic">Nuevo perfil creado para ${newName}.</p>`);
+            newWorkerNameInput.value = ''; 
+            await fetchAllWorkersAndRenderTabs(); 
+            await handleTabClick(newWorkerId, newName, 'worker'); 
+            showError(`${newName} añadido correctamente.`, 'success');
+        });
+
+        deleteWorkerBtn.addEventListener('click', () => {
+            if (!activeWorkerId || activeWorkerId === 'summary') {
+                showError("No hay un trabajador activo seleccionado para eliminar.");
+                return;
+            }
+            const workerNameToDelete = workerNameDisplay.value;
+            showConfirmationModal(
+                "Eliminar Trabajador",
+                `¿Estás seguro de que quieres eliminar a ${workerNameToDelete}? Esta acción eliminará todos sus datos y no se puede deshacer.`,
+                async () => {
+                    loadingIndicator.classList.remove('hidden');
+                    loadingText.textContent = `Eliminando a ${workerNameToDelete}...`;
+                    try {
+                        const workerDocRef = doc(db, baseWorkerColPath, activeWorkerId);
+                        await deleteDoc(workerDocRef);
+                        delete allWorkersDataCache[activeWorkerId]; 
+                        console.log(`Trabajador ${activeWorkerId} eliminado.`);
+                        await fetchAllWorkersAndRenderTabs(); // This will update dynamicWorkerList and re-render tabs
+                        await handleTabClick('summary', 'Resumen General', 'summary'); // Go to summary
+                        showError(`${workerNameToDelete} ha sido eliminado.`, 'success');
+                    } catch (error) {
+                        console.error("Error eliminando trabajador:", error);
+                        showError(`Error al eliminar a ${workerNameToDelete}.`);
+                    } finally {
+                        loadingIndicator.classList.add('hidden');
+                    }
+                }
+            );
+        });
+
+
+        // --- Report Generation & PDF ---
+        generateReportBtn.addEventListener('click', async () => {
+            if (activeWorkerId === 'summary' || !activeWorkerId) {
+                showError("Selecciona un trabajador para generar un informe.");
+                return;
+            }
+            loadingIndicator.classList.remove('hidden');
+            loadingText.textContent = "Generando Informe...";
+            generateReportBtn.disabled = true;
+            exportPdfBtn.disabled = true;
+            buttonIconSvg.innerHTML = loadingButtonIconPath;
+            buttonText.textContent = "Generando...";
+            errorMessage.classList.add('hidden');
+            reportOutput.innerHTML = '<p class="italic">Generando informe...</p>';
+            const workerName = workerNameDisplay.value;
+
+            const skillDetails = currentSkills.map(s => {
+                let detail = `- ${s.name}: ${s.value}`;
+                if (s.id === 'test' && s.description) { 
+                    detail += ` (Nota: ${s.description})`;
+                }
+                return detail;
+            }).join('\n');
+
+            const prompt = `
+Eres un evaluador de talento experto en desarrollo de software.
+Analiza las habilidades de "${workerName}" (puntuaciones 0-100):
+${skillDetails}
+
+Genera un informe conciso (máx 250 palabras) con:
+1. Resumen del perfil.
+2. 2-3 Fortalezas.
+3. 1-2 Áreas de mejora.
+4. 2-3 Recomendaciones accionables.
+
+Formato Markdown:
+**Informe de Habilidades para ${workerName}**
+
+**Resumen General:**
+[Análisis]
+
+**Fortalezas Clave:**
+- [Fortaleza 1]
+
+**Áreas de Mejora:**
+- [Mejora 1]
+
+**Recomendaciones:**
+1. [Recomendación 1]
+
+Considera que "Test" (o su nombre editado) es sobre pruebas manuales/funcionales según la tarea, no tests automatizados.`;
+
+            try {
+                let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+                const payload = { contents: chatHistory };
+                const apiKey = "AIzaSyC6LaXhR1JvHyobe1U0UQyDoQcSd3w7la8"; 
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                if (!response.ok) throw new Error(`Error API: ${response.status} ${response.statusText || ""}`);
+                const result = await response.json();
+                if (result.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    const text = result.candidates[0].content.parts[0].text;
+                    let htmlReport = text.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/^- (.*$)/gm, '<li>$1</li>').replace(/(<li>.*?<\/li>(<br>)*)+/g, (match) => `<ul>${match.replace(/<br>/g,'')}</ul>`).replace(/<\/ul>(<br>)*<ul>/g, '').replace(/\n/g, '<br>');
+                    reportOutput.innerHTML = htmlReport;
+                    await saveWorkerData(activeWorkerId, workerName, currentSkills, htmlReport);
+                } else { throw new Error("Respuesta API inesperada."); }
+            } catch (error) {  
+                console.error('Error generando informe:', error);
+                reportOutput.innerHTML = `<p class="text-red-400">Error al generar el informe.</p>`;
+                showError(`Error: ${error.message}.`);
+            } finally { 
+                loadingIndicator.classList.add('hidden');
+                generateReportBtn.disabled = false;
+                exportPdfBtn.disabled = false;
+                buttonIconSvg.innerHTML = originalButtonIconPath;
+                buttonText.textContent = "Generar Informe";
+            }
+        });
+
+        exportPdfBtn.addEventListener('click', async () => {
+            if (!activeWorkerId) {
+                showError("Selecciona un trabajador o la pestaña de resumen para exportar.");
+                return;
+            }
+            loadingIndicator.classList.remove('hidden');
+            loadingText.textContent = "Exportando PDF...";
+            generateReportBtn.disabled = true;
+            exportPdfBtn.disabled = true;
+
+            try {
+                const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+                let reportTitle, fileName;
+                const workerNameForPdf = activeWorkerId === 'summary' ? "Resumen_General" : workerNameDisplay.value.replace(/\s+/g, '_') || "Programador";
+                
+                if (activeWorkerId === 'summary') {
+                    reportTitle = "Resumen General de Habilidades";
+                    fileName = `Informe_Habilidades_Resumen_General.pdf`;
+                    pdf.setFontSize(18);
+                    pdf.text(reportTitle, 105, 15, { align: 'center' });
+
+                    const summaryContentElement = document.getElementById('reportOutput');
+                    const originalSummaryHeight = summaryContentElement.style.height;
+                    summaryContentElement.style.height = 'auto'; 
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+
+                    const canvasImg = await html2canvas(summaryContentElement, { 
+                        scale: 1.5, 
+                        windowWidth: summaryContentElement.scrollWidth, 
+                        windowHeight: summaryContentElement.scrollHeight, 
+                        useCORS: true, 
+                        backgroundColor: '#111827' 
+                    });
+                    summaryContentElement.style.height = originalSummaryHeight;
+
+                    const imgData = canvasImg.toDataURL('image/png');
+                    const imgProps = pdf.getImageProperties(imgData);
+                    const pdfPageWidth = pdf.internal.pageSize.getWidth();
+                    const pdfPageHeight = pdf.internal.pageSize.getHeight();
+                    const margin = 10;
+                    const availableWidth = pdfPageWidth - 2 * margin;
+                    const availableHeight = pdfPageHeight - 2 * margin - 15; 
+
+                    let imgReportHeight = (imgProps.height * availableWidth) / imgProps.width;
+                    let imgReportWidth = availableWidth;
+
+                    if (imgReportHeight > availableHeight) {
+                        imgReportHeight = availableHeight;
+                        imgReportWidth = (imgProps.width * availableHeight) / imgProps.height;
+                    }
+                     const xOffset = (pdfPageWidth - imgReportWidth) / 2;
+
+
+                    pdf.addImage(imgData, 'PNG', xOffset, margin + 15, imgReportWidth, imgReportHeight);
+
+                } else { 
+                    reportTitle = `Informe de Habilidades: ${workerNameDisplay.value}`;
+                    fileName = `Informe_Habilidades_${workerNameForPdf}.pdf`;
+                    pdf.setFontSize(18);
+                    pdf.text(reportTitle, 105, 20, { align: 'center' });
+
+                    const chartCanvasElement = document.getElementById('chartSectionToExport');
+                    const originalBgColor = chartCanvasElement.style.backgroundColor;
+                    chartCanvasElement.style.backgroundColor = '#1f2937'; 
+                    const chartCanvasImg = await html2canvas(chartCanvasElement, { scale: 2, backgroundColor: '#1f2937' });
+                    chartCanvasElement.style.backgroundColor = originalBgColor;
+                    const imgDataChart = chartCanvasImg.toDataURL('image/png');
+                    const imgPropsChart = pdf.getImageProperties(imgDataChart);
+                    const pdfWidthChart = pdf.internal.pageSize.getWidth();
+                    const imgChartWidth = pdfWidthChart * 0.7; 
+                    const imgChartHeight = (imgPropsChart.height * imgChartWidth) / imgPropsChart.width;
+                    const xOffsetChart = (pdfWidthChart - imgChartWidth) / 2;
+                    pdf.addImage(imgDataChart, 'PNG', xOffsetChart, 35, imgChartWidth, imgChartHeight);
+
+                    let reportContentText = reportOutput.innerText || reportOutput.textContent;
+                    pdf.setFontSize(12);
+                    const reportStartY = 35 + imgChartHeight + 15;
+                    const textLines = pdf.splitTextToSize(reportContentText, pdfWidthChart - 40);
+                    let currentY = reportStartY;
+                    textLines.forEach((line) => {
+                        if (currentY > pdf.internal.pageSize.getHeight() - 20) {  
+                            pdf.addPage(); currentY = 20; 
+                            pdf.setFontSize(18); pdf.text(reportTitle + " (cont.)", 105, 15, { align: 'center' }); pdf.setFontSize(12);
+                        }
+                        pdf.text(line, 20, currentY); currentY += 7;
+                    });
+                }
+                pdf.save(fileName);
+
+            } catch (error) { 
+                 console.error('Error exportando PDF:', error); showError(`Error al exportar PDF: ${error.message}.`);
+            } finally { 
+                 loadingIndicator.classList.add('hidden'); 
+                 generateReportBtn.disabled = (activeWorkerId === 'summary'); 
+                 exportPdfBtn.disabled = false;
+            }
+        });
+
+        // --- Reset Functions ---
+        resetWorkerBtn.addEventListener('click', () => {
+            if (!activeWorkerId || activeWorkerId === 'summary') {
+                showError("Selecciona un trabajador para resetear.");
+                return;
+            }
+            showConfirmationModal(
+                "Resetear Trabajador",
+                `¿Estás seguro de que quieres resetear las habilidades de ${workerNameDisplay.value} a los valores por defecto? Esta acción no se puede deshacer.`,
+                async () => {
+                    const workerDisplayName = workerNameDisplay.value;
+                    currentSkills = JSON.parse(JSON.stringify(defaultSkillsTemplate));
+                    await saveWorkerData(activeWorkerId, workerDisplayName, currentSkills, `<p class="italic">Habilidades reseteadas para ${workerDisplayName}.</p>`); 
+                    reportOutput.innerHTML = `<p class="italic">Habilidades reseteadas para ${workerDisplayName}.</p>`;
+                    renderSkillSliders();
+                    updateMainChart();
+                    console.log(`Habilidades reseteadas para ${activeWorkerId}`);
+                }
+            );
+        });
+
+        resetAllBtn.addEventListener('click', () => {
+            showConfirmationModal(
+                "Resetear Todos los Datos",
+                "¿Estás seguro de que quieres resetear los datos de TODOS los trabajadores? Esta acción eliminará todos los datos guardados y no se puede deshacer.",
+                async () => {
+                    if (!baseWorkerColPath) { console.error("baseWorkerColPath not set in resetAllBtn"); return; }
+                    loadingIndicator.classList.remove('hidden');
+                    loadingText.textContent = "Reseteando todo...";
+                    try {
+                        const workersColRef = collection(db, baseWorkerColPath); 
+                        const querySnapshot = await getDocs(workersColRef);
+                        const batch = writeBatch(db);
+                        querySnapshot.forEach((docSnap) => {
+                            batch.delete(docSnap.ref);
+                        });
+                        await batch.commit();
+                        allWorkersDataCache = {}; 
+                        dynamicWorkerList = []; 
+                        console.log("Todos los datos de trabajadores han sido reseteados.");
+                        await fetchAllWorkersAndRenderTabs(); 
+                        await handleTabClick('summary', 'Resumen General', 'summary'); 
+                    } catch (error) {
+                        console.error("Error reseteando todos los datos:", error);
+                        showError("Error al resetear todos los datos.");
+                    } finally {
+                        loadingIndicator.classList.add('hidden');
+                    }
+                }
+            );
+        });
+        
+        // --- Modal de Confirmación ---
+        function showConfirmationModal(title, message, onConfirm) {
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            confirmAction = onConfirm;
+            confirmationModal.classList.remove('hidden');
+        }
+        modalCancelBtn.addEventListener('click', () => confirmationModal.classList.add('hidden'));
+        modalConfirmBtn.addEventListener('click', () => {
+            if (typeof confirmAction === 'function') {
+                confirmAction();
+            }
+            confirmationModal.classList.add('hidden');
+        });
+
+
+        // --- Utility Functions ---
+        function showError(msg, type = 'error') {
+            errorMessage.textContent = msg;
+            if (type === 'success') {
+                errorMessage.classList.remove('bg-red-700', 'text-red-100');
+                errorMessage.classList.add('bg-green-600', 'text-green-100');
+            } else {
+                errorMessage.classList.remove('bg-green-600', 'text-green-100');
+                errorMessage.classList.add('bg-red-700', 'text-red-100');
+            }
+            errorMessage.classList.remove('hidden');
+            setTimeout(() => errorMessage.classList.add('hidden'), 5000);
+        }
+
+        // --- Initial Load ---
+        async function loadInitialData() {
+            await fetchAllWorkersAndRenderTabs(); 
+            // Set 'summary' as the default active tab ID before calling handleTabClick
+            activeWorkerId = 'summary';
+            await handleTabClick('summary', 'Resumen General', 'summary'); 
+        }
+        
+        initializeFirebase(); 
+
+    </script>
+</body>
+</html>
